@@ -1,0 +1,17 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "HeyEddi CI",
+      "description": "Configure eddi-ci.yaml, respond to HeyEddi findings, diagnose failing checks, and author pipeline YAML (Spot fail-closed).",
+      "skills": [
+        "heyeddi-ci-config",
+        "heyeddi-ci-guide",
+        "heyeddi-ci-respond",
+        "heyeddi-ci-fails",
+        "heyeddi-ci-runners"
+      ]
+    }
+  ]
+}

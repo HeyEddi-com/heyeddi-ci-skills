@@ -1,0 +1,12 @@
+{
+  "name": "heyeddi-ci-skills",
+  "version": "1.2.0",
+  "description": "CI-only HeyEddi agent skills (published mirror; SSOT is HeyEddi-com/heyeddi-skills).",
+  "skills": [
+    "heyeddi-ci-config",
+    "heyeddi-ci-guide",
+    "heyeddi-ci-respond",
+    "heyeddi-ci-fails",
+    "heyeddi-ci-runners"
+  ]
+}
