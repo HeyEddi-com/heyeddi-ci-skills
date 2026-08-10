@@ -2,6 +2,8 @@
 
 [![skills.sh](https://skills.sh/b/HeyEddi-com/heyeddi-ci-skills)](https://skills.sh/HeyEddi-com/heyeddi-ci-skills)
 
+Badge populates after skills.sh indexes the first installs.
+
 **Product-specific agent skills for [HeyEddi CI](https://ci.heyeddi.com)** — not a general CI toolkit. Use these when your GitHub App is HeyEddi CI: `eddi-ci.yaml`, PR findings, failing Checks, and Spot runners (placeholder / fail-closed).
 
 **Product:** [ci.heyeddi.com](https://ci.heyeddi.com) · **Policy docs:** [ci.heyeddi.com/docs#policy](https://ci.heyeddi.com/docs#policy)
