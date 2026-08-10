@@ -2,13 +2,15 @@
 
 [![skills.sh](https://skills.sh/b/HeyEddi-com/heyeddi-ci-skills)](https://skills.sh/HeyEddi-com/heyeddi-ci-skills)
 
-Cursor agent skills for **[HeyEddi CI](https://ci.heyeddi.com)** — PR review policy, `eddi-ci.yaml`, failing Checks, and Spot runners (placeholder / fail-closed).
+**Product-specific agent skills for [HeyEddi CI](https://ci.heyeddi.com)** — not a general CI toolkit. Use these when your GitHub App is HeyEddi CI: `eddi-ci.yaml`, PR findings, failing Checks, and Spot runners (placeholder / fail-closed).
 
 **Product:** [ci.heyeddi.com](https://ci.heyeddi.com) · **Policy docs:** [ci.heyeddi.com/docs#policy](https://ci.heyeddi.com/docs#policy)
 
 **skills.sh:** [skills.sh/heyeddi-com/heyeddi-ci-skills](https://www.skills.sh/heyeddi-com/heyeddi-ci-skills)
 
 **SSOT:** skills are authored in [`HeyEddi-com/heyeddi-skills`](https://github.com/HeyEddi-com/heyeddi-skills) (pack `heyeddi-ci-skills`). This repo is the **published skills.sh package** (mirror), not a second authoring tree.
+
+For the broader open toolkit (design, handoff, human PR review, …), install the hub instead.
 
 ## Install
 
