@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Filter PR comment cache to HeyEddi CI findings only.
+"""Optionally filter PR comment cache (e.g. HeyEddi CI only).
 
-Keep comments that match:
-- body contains ``<!-- heyeddi-ci-review``
-- body contains debate marker ``<!-- heyeddi-ci-debate:``
-- author login looks like heyeddi-ci / heyeddi[bot]
-- parent (via in_reply_to) looks like HeyEddi when parent is in the same payload
+Default ``--scope all`` keeps every reviewer comment. Use ``--scope heyeddi``
+when you intentionally want CI-bot findings only (rare — prefer unified respond).
 """
 from __future__ import annotations
 
@@ -16,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from _skill_cli import emit, resolve_project_root
+from _temp_store import comments_cache_path
 
 REVIEW_MARKER = "<!-- heyeddi-ci-review"
 DEBATE_MARKER = "<!-- heyeddi-ci-debate:"
@@ -114,20 +112,25 @@ def main() -> None:
     parser.add_argument(
         "--input",
         default=None,
-        help="Input comments JSON (default .heyeddi/docs/pr-<N>-ci-comments.json)",
+        help="Input comments JSON (default: system temp cache from fetch_pr_comments)",
     )
     parser.add_argument(
         "--output",
         default=None,
-        help="Output path (default overwrites input / ci-comments cache)",
+        help="Output path (default overwrites temp comments cache)",
     )
-    parser.add_argument("--check", action="store_true", help="Exit 1 when zero HeyEddi comments kept")
+    parser.add_argument(
+        "--scope",
+        choices=("all", "heyeddi"),
+        default="all",
+        help="all = keep every comment (default); heyeddi = CI findings only",
+    )
+    parser.add_argument("--check", action="store_true", help="Exit 1 when zero comments kept")
     args = parser.parse_args()
     root = resolve_project_root(args.project_root)
-    docs = root / ".heyeddi" / "docs"
-    default_cache = docs / f"pr-{args.pr}-ci-comments.json"
+    default_cache = comments_cache_path(args.pr)
     in_path = Path(args.input) if args.input else default_cache
-    if not in_path.is_absolute():
+    if args.input and not in_path.is_absolute():
         in_path = root / in_path
     if not in_path.is_file():
         emit(json.dumps({"error": "comments cache not found", "path": str(in_path)}, indent=2))
@@ -136,20 +139,37 @@ def main() -> None:
     if not isinstance(data, dict):
         emit(json.dumps({"error": "comments payload must be an object"}, indent=2))
         sys.exit(1)
-    filtered = filter_payload(data)
+    filtered = filter_payload(data) if args.scope == "heyeddi" else dict(data)
+    if args.scope == "all":
+        inline = [c for c in (data.get("inline") or []) if isinstance(c, dict)]
+        reviews = [c for c in (data.get("reviews") or []) if isinstance(c, dict)]
+        discussion = data.get("discussion") or {}
+        disc = (
+            [c for c in (discussion.get("comments") or []) if isinstance(c, dict)]
+            if isinstance(discussion, dict)
+            else []
+        )
+        kept = {"inline": len(inline), "reviews": len(reviews), "discussion": len(disc)}
+        dropped = {"inline": 0, "reviews": 0, "discussion": 0}
+        filtered["filter_scope"] = "all"
+    else:
+        kept = filtered["heyeddi_filter"]["kept"]
+        dropped = filtered["heyeddi_filter"]["dropped"]
     out_path = Path(args.output) if args.output else default_cache
-    if not out_path.is_absolute():
+    if args.output and not out_path.is_absolute():
         out_path = root / out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(filtered, indent=2) + "\n", encoding="utf-8")
-    kept = filtered["heyeddi_filter"]["kept"]
     total = kept["inline"] + kept["reviews"] + kept["discussion"]
     result = {
         "pr": args.pr,
-        "path": str(out_path.relative_to(root)),
+        "path": str(out_path),
+        "scope": args.scope,
+        "ephemeral": True,
         "kept": kept,
-        "dropped": filtered["heyeddi_filter"]["dropped"],
+        "dropped": dropped,
         "total_kept": total,
+        "rule": "Never copy comments into .heyeddi/docs/pr-* scratch files.",
     }
     emit(json.dumps(result, indent=2))
     if args.check and total == 0:
