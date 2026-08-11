@@ -23,7 +23,7 @@ npx skills add HeyEddi-com/heyeddi-ci-skills -a cursor -y --skill '*'
 Pin a release:
 
 ```bash
-npx skills add https://github.com/HeyEddi-com/heyeddi-ci-skills/tree/v1.3.0 -a cursor -y --skill '*'
+npx skills add https://github.com/HeyEddi-com/heyeddi-ci-skills/tree/v1.3.1 -a cursor -y --skill '*'
 ```
 
 Full open toolkit (design, handoff, human PR review, …):
@@ -32,12 +32,12 @@ Full open toolkit (design, handoff, human PR review, …):
 npx skills add HeyEddi-com/heyeddi-skills -a cursor -y --skill '*'
 ```
 
-## Pack (v1.3.0)
+## Pack (v1.3.1)
 
 | Skill | Role |
 |-------|------|
 | `@heyeddi-ci-config` | Author `eddi-ci.yaml` from the live policy contract |
-| `@heyeddi-ci-respond` | Reply to HeyEddi CI findings (not human review) |
+| `@heyeddi-pr-respond` | Reply to all PR review feedback (human + HeyEddi CI) |
 | `@heyeddi-ci-fails` | Diagnose failing GitHub Checks |
 | `@heyeddi-ci-runners` | PLACEHOLDER — `pipeline:` YAML only (Spot not executing) |
 | `@heyeddi-ci-guide` | Commands, auth, feedback paths |
