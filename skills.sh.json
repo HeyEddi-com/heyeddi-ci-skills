@@ -8,7 +8,7 @@
       "skills": [
         "heyeddi-ci-config",
         "heyeddi-ci-guide",
-        "heyeddi-ci-respond",
+        "heyeddi-pr-respond",
         "heyeddi-ci-fails",
         "heyeddi-ci-runners"
       ]
