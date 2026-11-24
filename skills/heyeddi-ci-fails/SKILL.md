@@ -2,7 +2,7 @@
 name: heyeddi-ci-fails
 description: "Diagnose and fix failing GitHub Checks on PR work by default: fetch evidence, write ephemeral ci-fails report, apply fixes, verify locally. Run automatically — do not wait for user to ask. Never merge without authorize merge. Companion to /heyeddi fails."
 version: 1.1.0
-product-version: 3.8.8
+product-version: 3.8.22
 author: HeyEddi-com
 disable-model-invocation: true
 ---
@@ -18,7 +18,7 @@ Run this skill **automatically** on any PR work — open PR, PR branch, review r
 - **Always** fetch and diagnose failing Checks
 - **Always** apply fixes when the diagnosis identifies actionable failures
 - **Always** commit + push fixes as part of the PR workflow
-- Only **merge** still requires **authorize merge** in the current turn
+- Only merge can need a question: merge follows `agent.permissions.merge` (default `ask`: the user says **authorize merge** in the current turn)
 
 ## Ephemeral artifacts (do not commit)
 
@@ -46,7 +46,7 @@ Also tell the user they can comment `/heyeddi fails` on the PR for hosted App an
 ## Hard rules
 
 - Never invent failure causes without citing check evidence
-- Never merge without **authorize merge**
+- Never merge unless merge follows `agent.permissions.merge` (default `ask`: the user says **authorize merge** in the current turn)
 - Never claim Spot/GHA jobs ran without Check or Spot evidence
 
 ## Tools
@@ -57,6 +57,15 @@ Also tell the user they can comment `/heyeddi fails` on the PR for hosted App an
 | `write_ci_fails_report` | Write `pr-<N>-ci-fails.md` |
 | `discover_and_verify` | Evidenced verify after fixes |
 | `assert_no_merge` | Merge hard gate |
+
+## Without the gh CLI
+
+`gh` is optional. Every script here that talks to GitHub checks for it first. When `gh` is missing or logged out, the script prints `{"status": "degraded", ...}` with the reason and a `manual` list, and exits **3**.
+
+- Exit 3 is not a pass and not a failure. It means the step could not run.
+- Do not retry in a loop and do not report the step as done.
+- Do the step by hand with the GitHub MCP tools named in `manual`; if that is not possible, keep going and list `gh auth login` under **Needs you**.
+- Nothing is posted, verified or signed off when a script exits 3.
 
 ## When complete
 

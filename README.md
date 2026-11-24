@@ -23,7 +23,7 @@ npx skills add HeyEddi-com/heyeddi-ci-skills -a cursor -y --skill '*'
 Pin a release:
 
 ```bash
-npx skills add https://github.com/HeyEddi-com/heyeddi-ci-skills/tree/v1.4.6 -a cursor -y --skill '*'
+npx skills add https://github.com/HeyEddi-com/heyeddi-ci-skills/tree/v1.4.8 -a cursor -y --skill '*'
 ```
 
 Full open toolkit (design, handoff, human PR review, …):
@@ -32,7 +32,7 @@ Full open toolkit (design, handoff, human PR review, …):
 npx skills add HeyEddi-com/heyeddi-skills -a cursor -y --skill '*'
 ```
 
-## Pack (v1.4.6)
+## Pack (v1.4.8)
 
 | Skill | Role |
 |-------|------|
@@ -44,7 +44,7 @@ npx skills add HeyEddi-com/heyeddi-skills -a cursor -y --skill '*'
 
 ## Product honesty
 
-- **No unauthorized merge** — agents need explicit **authorize merge** in the current turn
+- **No unauthorized merge**: merge follows the project's agent preset; the default asks for **authorize merge** in the current turn
 - **No structured FP API yet** — use PR debate / `support@heyeddi.com`
 - **Runners fail-closed** — do not claim jobs ran
 - **PR scratch** under `.heyeddi/docs/pr-*` is ephemeral / gitignored

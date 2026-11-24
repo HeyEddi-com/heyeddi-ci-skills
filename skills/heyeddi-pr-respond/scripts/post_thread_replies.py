@@ -10,6 +10,9 @@ Resolution (mandatory — never guess):
 - On REST failure → GraphQL ``addPullRequestReviewThreadReply``
 - Issue comments, tests-hold notes, review summaries, and comments written by
   the responding account are skipped. There is no quote.
+- A reply that opens with Fixed / Done / Addressed resolves its thread after it
+  posts (the HeyEddi Reviewer waits on open threads). Declines and partial
+  fixes stay open for the reviewer. ``--no-resolve`` turns this off.
 
 Outgoing bodies that still contain ``<<<UNTRUSTED_`` are refused.
 
@@ -32,7 +35,9 @@ from _comment_resolve import (
     ReplyTarget,
     build_comment_index,
     find_review_thread_id,
+    is_fixed_reply,
     resolve_reply_target,
+    resolve_review_thread,
 )
 
 
@@ -55,7 +60,7 @@ from _replies_parse import (
     parse_reply_sections,
     summary_is_last,
 )
-from _skill_cli import emit, resolve_project_root, run_command
+from _skill_cli import EXIT_DEGRADED, emit, gh_status, resolve_project_root, run_command
 from _temp_store import comments_cache_path
 from assert_fixes_pushed import evaluate as evaluate_fixes_pushed
 
@@ -389,13 +394,21 @@ def main() -> None:
             "Never use after applying fixes — debate only sees remote HEAD."
         ),
     )
+    parser.add_argument(
+        "--no-resolve",
+        action="store_true",
+        help="Leave every thread open (default: resolve threads whose reply opens with Fixed)",
+    )
     args = parser.parse_args()
 
     root = resolve_project_root(args.project_root)
     cache_path = comments_cache_path(args.pr)
 
     # Live posts require remote HEAD to already contain any code fixes.
-    dry_run = args.dry_run or not shutil.which("gh")
+    gh_state = gh_status(root)
+    # gh missing or logged out: nothing can be posted. Plan the replies, say so, exit 3.
+    degraded_mode = not args.dry_run and not gh_state["ok"]
+    dry_run = args.dry_run or degraded_mode
     if not dry_run and not args.allow_unpushed:
         gate = evaluate_fixes_pushed(root)
         if not gate.get("ok"):
@@ -443,7 +456,16 @@ def main() -> None:
 
     posted: list[dict] = []
     errors: list[str] = []
+    resolve_errors: list[str] = []
     succeeded_ids: set[str] = set()
+
+    def wants_resolve(target: ReplyTarget, body: str) -> bool:
+        return (
+            not args.no_resolve
+            and target.post_method == "review_reply"
+            and bool(target.reply_to_id)
+            and is_fixed_reply(body)
+        )
 
     for section in sections:
         if not section.body.strip():
@@ -499,6 +521,11 @@ def main() -> None:
                     "post_method": target.post_method,
                     "resolve_detail": target.detail,
                     "mcp_fallback": target.mcp_hint,
+                    "resolve": (
+                        "would-resolve"
+                        if status in OK_STATUSES and wants_resolve(target, section.body)
+                        else "left-open"
+                    ),
                     "note": (
                         target.detail
                         if target.post_method in _SKIP_STATUS
@@ -534,10 +561,18 @@ def main() -> None:
             "attempts": attempts,
             "mcp_fallback": target.mcp_hint,
         }
+        entry["resolve"] = "left-open"
         if status in OK_STATUSES:
             succeeded_ids.add(section.comment_id)
             if status == "skipped_review_body":
                 entry["detail"] = ref
+            if status in {"posted", "already-replied"} and wants_resolve(target, section.body):
+                assert target.reply_to_id is not None
+                r_status, r_detail = resolve_review_thread(root, repo, args.pr, target.reply_to_id)
+                entry["resolve"] = r_status
+                if r_status != "resolved":
+                    entry["resolve_error"] = r_detail
+                    resolve_errors.append(f"{section.comment_id}: {r_detail}")
         else:
             entry["detail"] = ref
             errors.append(f"{section.comment_id}: {ref}")
@@ -563,6 +598,8 @@ def main() -> None:
         "posted_count": sum(1 for p in posted if p["status"] in OK_STATUSES),
         "error_count": len(errors),
         "errors": errors,
+        "resolved_count": sum(1 for p in posted if p.get("resolve") == "resolved"),
+        "resolve_errors": resolve_errors,
         "summary": summary_status,
         "rule": (
             "Reply only on unresolved review threads at the root comment id, "
@@ -570,8 +607,24 @@ def main() -> None:
             "that contains <<<UNTRUSTED_. On a review-thread error, use GitHub "
             "MCP add_reply_to_pull_request_comment with the root id."
         ),
-        "hint": "Run verify_response.py --pr <N> --live --check after posting.",
+        "hint": (
+            "Run verify_response.py --pr <N> --live --check after posting. "
+            "A resolve_errors entry is not a failed reply: resolve that thread "
+            "with GitHub MCP resolve_review_thread or `gh api graphql` resolveReviewThread."
+        ),
     }
+
+    if degraded_mode:
+        payload["status"] = "degraded"
+        payload["posted"] = False
+        payload["gh"] = {k: gh_state.get(k) for k in ("state", "reason", "hint")}
+        payload["manual"] = [
+            "Nothing was posted to GitHub. Each entry in `posted` carries its mcp_fallback.",
+            "Reply on each root review comment with the GitHub MCP tool add_reply_to_pull_request_comment (no quote).",
+            "Or run `gh auth login` and re-run this script.",
+        ]
+        emit(json.dumps(payload, indent=2))
+        sys.exit(EXIT_DEGRADED)
 
     emit(json.dumps(payload, indent=2))
     if errors:
