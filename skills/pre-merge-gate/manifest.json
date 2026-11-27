@@ -1,0 +1,36 @@
+{
+  "skill": "pre-merge-gate",
+  "version": "2.0.2",
+  "tools": [
+    {
+      "name": "run_pre_merge_gate",
+      "description": "Orchestrate stack-aware pre-merge checks. With --signoff/--pr: git-clean, CI, unresolved threads. Exit 1 on any FAIL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_root": {
+            "type": "string",
+            "description": "Workspace root path"
+          },
+          "signoff": {
+            "type": "boolean",
+            "description": "Merge sign-off: git-clean, auto-detect PR, ban emergency skips"
+          },
+          "pr": {
+            "type": "integer",
+            "description": "PR number (implies sign-off + CI/thread checks)"
+          },
+          "cost_approved": {
+            "type": "string",
+            "description": "The user's reason for accepting an over-budget change (passed to estimate_change_cost --approved). Only after the user approved it"
+          }
+        },
+        "required": [
+          "project_root"
+        ]
+      },
+      "script": "scripts/pre_merge_gate.py",
+      "readonly": true
+    }
+  ]
+}

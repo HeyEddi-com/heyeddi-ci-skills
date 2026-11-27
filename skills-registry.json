@@ -1,12 +1,18 @@
 {
   "name": "heyeddi-ci-skills",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "CI-only HeyEddi agent skills (published mirror; SSOT is HeyEddi-com/heyeddi-skills).",
   "skills": [
     "heyeddi-ci-config",
     "heyeddi-ci-guide",
     "heyeddi-pr-respond",
     "heyeddi-ci-fails",
-    "heyeddi-ci-runners"
+    "heyeddi-ci-runners",
+    "heyeddi",
+    "heyeddi-setup",
+    "heyeddi-local-first",
+    "pre-merge-gate",
+    "engineering-excellence",
+    "heyeddi-product"
   ]
 }

@@ -1,0 +1,492 @@
+"""Suggest the next HeyEddi skill and user prompt after a pipeline task completes."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from _catalog import load_routing
+
+ORCHESTRATOR_SCRIPT = (
+    ".agents/skills/heyeddi/scripts/suggest_next_skill.py"
+)
+
+# Default pipeline when skill-routing.json is absent or exhausted.
+# `prompt` = what the user should paste in chat (@skill + sub-command + target).
+DEFAULT_NEXT: dict[str, dict[str, str]] = {
+    "heyeddi-intake": {
+        "skill": "heyeddi-product",
+        "prompt": "@heyeddi-product audit the product, write feature specs for each routed surface, and fill the backlog",
+        "why": "Specs and backlog drive the build loop.",
+    },
+    "heyeddi-product": {
+        "skill": "heyeddi-product",
+        "prompt": "build request: @heyeddi-product run the backlog loop: `python .agents/skills/heyeddi-product/scripts/backlog.py --project-root . next`, then build that item through merge below production",
+        "why": "Specs and backlog are ready: build every doable item.",
+    },
+    "taste-penpot": {
+        "skill": "heyeddi-design",
+        "prompt": "@heyeddi-design record the taste-penpot tokens for <route> and hand off. Do not invent a second palette.",
+        "why": "Product docs and stack handoff consume the look that taste already chose.",
+    },
+    "heyeddi": {
+        "skill": "heyeddi-setup",
+        "prompt": "@heyeddi-setup run `write_setup.py --defaults` (no questions) to record stack + git/tools/agent prefs in .heyeddi/stack.json",
+        "why": "Working prefs should exist before intake or scaffold.",
+    },
+    "heyeddi-setup": {
+        "skill": "heyeddi-intake",
+        "prompt": "@heyeddi-intake: describe the app or feature in plain language",
+        "why": "Setup complete: capture product intent next (or scaffold if product.md already exists).",
+    },
+    "heyeddi-design": {
+        "skill": "heyeddi-handoff",
+        "prompt": "@heyeddi-handoff implement <route> from .heyeddi/designs/<feature>/",
+        "why": "Brief or mockups ready: stack implementer builds Vue, then visual QA.",
+    },
+    "heyeddi-handoff": {
+        "skill": "engineering-excellence",
+        "prompt": "@engineering-excellence audit_engineering --check after implementing <route>",
+        "why": "Always-on change gate: KISS/YAGNI/SOLID before visual QA.",
+    },
+    "design-handoff-flutter": {
+        "skill": "engineering-excellence",
+        "prompt": "@engineering-excellence audit_engineering --check after Flutter handoff for <route>",
+        "why": "Always-on change gate after Material handoff.",
+    },
+    "engineering-excellence": {
+        "skill": "visual-auditor",
+        "prompt": "@visual-auditor review and fix <route> against product.md and design.md",
+        "why": "Engineering audit passed or advisory-only: visual QA next.",
+    },
+    "project-engineering": {
+        "skill": "heyeddi-design",
+        "prompt": "build request: @heyeddi-design craft the first user-facing route now that the stack is scaffolded",
+        "why": "Scaffold is up: build the first surface.",
+    },
+    "flutter-engineering": {
+        "skill": "heyeddi-design",
+        "prompt": "build request: @heyeddi-design craft the first Flutter route from product.md",
+        "why": "Flutter scaffold is up: build the first screen.",
+    },
+    "visual-auditor": {
+        "skill": "pre-merge-gate",
+        "prompt": "@pre-merge-gate --signoff run the merge readiness checklist",
+        "why": "Full QA gate after visual fixes pass (includes engineering + prose + PR checks).",
+    },
+    "pre-merge-gate": {
+        "skill": "heyeddi-product",
+        "prompt": "Merge PR #<number> into dev / test / staging once --signoff exits 0, then run `python .agents/skills/heyeddi-product/scripts/backlog.py --project-root . next` and build that item",
+        "why": "Below production merges need no question; only a production merge waits for authorize merge.",
+    },
+    "heyeddi-pr-review": {
+        "skill": "heyeddi-pr-respond",
+        "prompt": "@heyeddi-pr-respond address all review comments on PR #<number> (including this review)",
+        "why": "Inline findings posted: author fixes/declines and replies (same GitHub user ok).",
+    },
+    "heyeddi-pr-respond": {
+        "skill": "pre-merge-gate",
+        "prompt": "@pre-merge-gate --signoff re-run gates after addressing review feedback",
+        "why": "Threads answered: confirm merge readiness (review does not own gates).",
+    },
+    "heyeddi-ci-config": {
+        "skill": "heyeddi-ci-guide",
+        "prompt": "@heyeddi-ci-guide summarize commands, authorize-merge rules, and feedback paths",
+        "why": "Config is set: orient on CI commands and safety before respond/fails.",
+    },
+    "heyeddi-ci-guide": {
+        "skill": "heyeddi-pr-respond",
+        "prompt": "@heyeddi-pr-respond address review feedback on PR #<number> (human + HeyEddi CI)",
+        "why": "Guide done: respond to all PR review findings.",
+    },
+    "heyeddi-ci-fails": {
+        "skill": "heyeddi-pr-respond",
+        "prompt": "@heyeddi-pr-respond address all review feedback on PR #<number>",
+        "why": "CI failures fixed: respond to all PR review threads.",
+    },
+    "heyeddi-ci-runners": {
+        "skill": "heyeddi-ci-guide",
+        "prompt": "@heyeddi-ci-guide confirm Spot claim rules (evidence before execution claims) and list next CI skills",
+        "why": "Runners wired: restate evidence rule and point at fails/respond.",
+    },
+    "vue-design-system": {
+        "skill": "visual-verification",
+        "prompt": "@visual-verification screenshot <route> on the Vite server and fix what you see",
+        "why": "GUI code is written: self-correct from a live screenshot before the recorded review.",
+    },
+    "quasar-foundation": {
+        "skill": "motion-physics",
+        "prompt": "@motion-physics apply spring presets to the Quasar shell on <route>",
+        "why": "Shell exists: entry and press feedback use the shared springs.",
+    },
+    "primevue-aura": {
+        "skill": "motion-physics",
+        "prompt": "@motion-physics apply modalEnter and staggerItem on <route>",
+        "why": "Data surface exists: dialogs and lists use the shared springs.",
+    },
+    "motion-physics": {
+        "skill": "visual-verification",
+        "prompt": "@visual-verification screenshot <route> on the Vite server and fix what you see",
+        "why": "Motion is set: look at the rendered page and fix layout defects.",
+    },
+    "layout-morph": {
+        "skill": "fancy-ui-craft",
+        "prompt": "@fancy-ui-craft add depth only if this surface needs it, otherwise stop",
+        "why": "The shared element moves. Depth is optional and comes next only when requested.",
+    },
+    "fancy-ui-craft": {
+        "skill": "visual-verification",
+        "prompt": "@visual-verification screenshot <route> on the Vite server and fix what you see",
+        "why": "Depth is in place: confirm contrast and that the effect does not crowd the task.",
+    },
+    "aura-design-tokens": {
+        "skill": "visual-verification",
+        "prompt": "@visual-verification screenshot <route> on the Vite server and fix what you see",
+        "why": "Token bridge is in place: confirm the rendered surfaces.",
+    },
+    "visual-verification": {
+        "skill": "visual-auditor",
+        "prompt": "@visual-auditor review and fix <route> against product.md and design.md",
+        "why": "Live screenshot loop is done: record the review.",
+    },
+    "cli-interface-design": {
+        "skill": "engineering-excellence",
+        "prompt": "@engineering-excellence audit_engineering --check after the CLI flow",
+        "why": "Terminal UI is in place: engineering change gate next.",
+    },
+}
+
+# Overrides when the finishing skill used a specific sub-command (e.g. design shape → craft).
+MODE_NEXT: dict[str, dict[str, dict[str, str]]] = {
+    "heyeddi-design": {
+        "critique": {
+            "skill": "visual-auditor",
+            "prompt": "@visual-auditor review and fix <route> against product.md and design.md",
+            "why": "Critique done: visual QA implements P0/P1 fixes from the report.",
+        },
+        "polish": {
+            "skill": "visual-auditor",
+            "prompt": "@visual-auditor re-check <route> after polish",
+            "why": "Polish changed UI: confirm contrast and layout vs spec.",
+        },
+        "document": {
+            "skill": "heyeddi-design",
+            "prompt": "build request: @heyeddi-design craft <route> for the next surface",
+            "why": "Design system is documented: build the next route.",
+        },
+    },
+    "heyeddi-product": {
+        "audit": {
+            "skill": "heyeddi-product",
+            "prompt": "build request: @heyeddi-product add the audit findings to the backlog, then run `python .agents/skills/heyeddi-product/scripts/backlog.py --project-root . next` and build that item",
+            "why": "Product audit is done: fix and build in priority order.",
+        },
+        "review": {
+            "skill": "pre-merge-gate",
+            "prompt": "@pre-merge-gate --signoff run the merge readiness checklist",
+            "why": "Holistic PM review is complete: confirm gates before ship.",
+        },
+    },
+    "heyeddi": {
+        "sync": {
+            "skill": "heyeddi-intake",
+            "prompt": "@heyeddi-intake: continue product intake for this project",
+            "why": "Workspace synced: intake if product context is still thin.",
+        },
+    },
+    "engineering-excellence": {
+        "audit": {
+            "skill": "visual-auditor",
+            "prompt": "@visual-auditor review and fix <route> against product.md and design.md",
+            "why": "Change-gate audit done: visual QA when UI was touched.",
+        },
+        "plan": {
+            "skill": "heyeddi-handoff",
+            "prompt": "@heyeddi-handoff implement <route> from the approved plan",
+            "why": "Plan gate passed: implement the smallest change that meets AC.",
+        },
+    },
+}
+
+DONE_NEXT: dict[str, str] = {
+    "skill": "heyeddi",
+    "prompt": "Run `python .agents/skills/heyeddi-product/scripts/backlog.py --project-root . next` and build that item; with none left, @heyeddi: what skill should handle: <describe next task>",
+    "why": "Pipeline step complete: the backlog decides whether work remains.",
+}
+
+def _frontend_stack(project_root: Path) -> str:
+    stack_path = project_root / ".heyeddi" / "stack.json"
+    if stack_path.is_file():
+        try:
+            data = json.loads(stack_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return str(data.get("frontend") or "vue").lower()
+        except (json.JSONDecodeError, OSError):
+            pass
+    if (project_root / "pubspec.yaml").is_file():
+        return "flutter"
+    return "vue"
+
+
+def _implement_next(project_root: Path, route: str | None) -> dict[str, str]:
+    frontend = _frontend_stack(project_root)
+    route_token = route if route else "<route>"
+    if frontend == "flutter":
+        return {
+            "skill": "design-handoff-flutter",
+            "prompt": f"@design-handoff-flutter implement {route_token} from .heyeddi/designs/<feature>/",
+            "why": "Brief confirmed: Flutter implementer builds the screen, then visual QA.",
+        }
+    return {
+        "skill": "heyeddi-handoff",
+        "prompt": f"@heyeddi-handoff implement {route_token} from .heyeddi/designs/<feature>/",
+        "why": "Brief confirmed: Vue implementer builds the screen, then visual QA.",
+    }
+
+
+def _feature_slug(route: str | None, feature: str | None = None) -> str:
+    if feature:
+        return feature
+    if not route or route == "/":
+        return "home"
+    return route.strip("/").replace("/", "-")
+
+
+def _substitute_placeholders(
+    text: str,
+    *,
+    route: str | None,
+    feature: str | None = None,
+) -> str:
+    slug = _feature_slug(route, feature)
+    if route:
+        text = text.replace("<route>", route)
+    else:
+        text = text.replace("<route>", "/<route>")
+    text = text.replace("<feature>", slug)
+    return text
+
+
+def _prompt_for_route(route: dict[str, Any]) -> str:
+    skill = str(route.get("skill") or "")
+    route_path = route.get("route") or "/"
+    feature = route.get("feature") or _feature_slug(route_path)
+    mode = route.get("mode") or ""
+
+    if skill == "heyeddi-design":
+        sub = mode or "craft"
+        return f"build request: @heyeddi-design {sub} {route_path}: feature `{feature}`"
+    if skill == "heyeddi-handoff":
+        return (
+            f"@heyeddi-handoff implement {route_path} from "
+            f".heyeddi/designs/{feature}/"
+        )
+    if skill == "design-handoff-flutter":
+        return (
+            f"@design-handoff-flutter implement {route_path} from "
+            f".heyeddi/designs/{feature}/"
+        )
+    if skill == "visual-auditor":
+        return f"@visual-auditor review and fix {route_path}"
+    if skill == "heyeddi-product":
+        return f"@heyeddi-product holistic review for {route_path}"
+    return f"@{skill}: work on `{feature}` at {route_path}"
+
+
+def _entry(
+    skill: str,
+    prompt: str,
+    *,
+    why: str,
+    source: str,
+    route: str = "",
+    feature: str = "",
+) -> dict[str, str]:
+    return {
+        "skill": skill,
+        "prompt": prompt,
+        "why": why,
+        "source": source,
+        **({"route": route} if route else {}),
+        **({"feature": feature} if feature else {}),
+    }
+
+
+def _route_entry(skill: str, route: dict[str, Any], *, why: str) -> dict[str, str]:
+    return _entry(
+        skill,
+        _prompt_for_route(route),
+        why=why,
+        source="skill-routing.json",
+        route=str(route.get("route") or ""),
+        feature=str(route.get("feature") or ""),
+    )
+
+
+def _scaffold_entry(step: str, *, why: str) -> dict[str, str]:
+    parts = step.split()
+    skill = parts[0]
+    tail = " ".join(parts[1:])
+    if skill in {"project-engineering", "flutter-engineering"}:
+        prompt = f"@{skill} scaffold the full stack for this project"
+    elif tail.startswith("scaffold_stack"):
+        prompt = f"@{skill.split('-')[0] if '-' in skill else skill} scaffold: run stack setup"
+    else:
+        prompt = f"@{skill} {tail}" if tail else f"@{skill}: read SKILL.md"
+    return _entry(skill, prompt, why=why, source="skill-routing.json")
+
+
+def _has_mockups(project_root: Path, route: str | None, feature: str | None) -> bool:
+    designs = project_root / ".heyeddi" / "designs"
+    if not designs.is_dir():
+        return False
+    slug = _feature_slug(route, feature)
+    for candidate in (designs / slug, designs / (slug.replace("-", "_"))):
+        if candidate.is_dir() and any(candidate.glob("*.png")):
+            return True
+    return any(designs.glob("**/*.png"))
+
+
+def _next_from_routing(
+    routing: dict[str, Any],
+    current_skill: str,
+    *,
+    current_route: str | None,
+) -> dict[str, str] | None:
+    routes: list[dict[str, Any]] = list(routing.get("routes") or [])
+
+    if current_skill == "heyeddi-intake":
+        # Specs and backlog come first (default chain); the backlog loop scaffolds and builds.
+        return None
+
+    if current_skill in {"project-engineering", "flutter-engineering"}:
+        scaffold = routing.get("scaffold") or []
+        if len(scaffold) > 1 and current_skill == str(scaffold[0]).split()[0]:
+            return _scaffold_entry(
+                str(scaffold[1]),
+                why="Second scaffold step from skill-routing.json.",
+            )
+        if routes:
+            first = routes[0]
+            return _route_entry(
+                str(first.get("skill") or ""),
+                first,
+                why="First design/handoff route after scaffold.",
+            )
+
+    index: int | None = None
+    if current_route:
+        for idx, route in enumerate(routes):
+            if route.get("route") == current_route:
+                index = idx
+                break
+
+    if index is None:
+        for idx, route in enumerate(routes):
+            route_skill = str(route.get("skill") or "")
+            if route_skill == current_skill:
+                index = idx
+                break
+
+    if index is not None and index + 1 < len(routes):
+        nxt = routes[index + 1]
+        prev = routes[index]
+        return _route_entry(
+            str(nxt.get("skill") or ""),
+            nxt,
+            why=f"Next route after {prev.get('route', '?')} in skill-routing.json.",
+        )
+
+    if index is not None and index + 1 >= len(routes):
+        return dict(DEFAULT_NEXT.get("pre-merge-gate", DONE_NEXT))
+
+    return None
+
+
+def format_user_block(next_step: dict[str, str]) -> str:
+    skill = next_step.get("skill", "")
+    prompt = next_step.get("prompt", next_step.get("command", ""))
+    why = next_step.get("why", "")
+    lines = [
+        "### Next step",
+        f"**Skill:** `@{skill}`",
+        f"**Prompt:** {prompt}",
+        f"**Why:** {why}",
+    ]
+    route = next_step.get("route")
+    if route:
+        lines.insert(3, f"**Route:** `{route}`")
+    return "\n".join(lines)
+
+
+def suggest_next_skill(
+    project_root: Path,
+    *,
+    current_skill: str | None = None,
+    current_route: str | None = None,
+    current_mode: str | None = None,
+    hub_root: Path | None = None,
+) -> dict[str, Any]:
+    routing = load_routing(project_root)
+
+    skill = (current_skill or "").strip()
+    mode = (current_mode or "").strip().lower()
+    next_step: dict[str, str] | None = None
+
+    if mode and skill == "heyeddi-design" and mode in {"shape", "craft"}:
+        next_step = _implement_next(project_root, current_route)
+        next_step["source"] = "mode-chain"
+    elif mode and skill in MODE_NEXT and mode in MODE_NEXT[skill]:
+        next_step = dict(MODE_NEXT[skill][mode])
+        next_step["source"] = "mode-chain"
+
+    if next_step is None and routing and skill:
+        next_step = _next_from_routing(
+            routing,
+            skill,
+            current_route=current_route,
+        )
+
+    if next_step is None and skill == "heyeddi-design":
+        next_step = _implement_next(project_root, current_route)
+        next_step["source"] = "default-chain"
+
+    if next_step is None and skill and skill in DEFAULT_NEXT:
+        next_step = dict(DEFAULT_NEXT[skill])
+        next_step["source"] = "default-chain"
+
+    if next_step is None:
+        next_step = dict(DONE_NEXT)
+        next_step["source"] = "fallback"
+
+    feature = next_step.get("feature") or None
+    prompt = _substitute_placeholders(
+        next_step.get("prompt", next_step.get("command", "")),
+        route=current_route,
+        feature=feature,
+    )
+    next_step["prompt"] = prompt
+    next_step.pop("command", None)
+
+    helper = (
+        f"python {ORCHESTRATOR_SCRIPT} --current-skill {skill or 'heyeddi'} "
+        f"--project-root ."
+    )
+    if current_route:
+        helper += f' --route "{current_route}"'
+    if mode:
+        helper += f' --mode "{mode}"'
+
+    return {
+        "current_skill": skill or current_skill,
+        "current_mode": mode or None,
+        "routing_found": routing is not None,
+        "next": next_step,
+        "helper_command": helper,
+        "user_block": format_user_block(next_step),
+        "instruction": (
+            "If the next step is part of the request, run it now. In a build request, keep going until "
+            "backlog.py next returns no item. Otherwise add one line under Next in the final summary; "
+            "never list leftovers."
+        ),
+    }

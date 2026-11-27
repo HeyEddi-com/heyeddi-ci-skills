@@ -1,0 +1,71 @@
+# Default pipelines (top-tier bar)
+
+**Date:** 2026-11-07
+
+Agents run these chains **automatically**, end to end, per `reference/autonomy.md`. No confirmation between steps.
+
+## UI: greenfield route
+
+```
+@heyeddi-intake          → product.md + skill-routing
+@heyeddi-design shape    → brief.md (confirmed only in a design request)
+<stack implementer>      → @heyeddi-handoff (vue) or @design-handoff-flutter
+@engineering-excellence  → plan gate before code; audit_engineering --check after
+@vue-design-system              (vue: Quasar, PrimeVue Aura, motion, tokens)
+@visual-verification     (vue GUI: Playwright MCP screenshot, fix)
+@visual-auditor          → fix, not report-only
+@ux-flow-auditor         → flagship routes
+@pre-merge-gate --signoff → merge readiness (local + PR CI + open threads)
+```
+
+## UI: redesign or from scratch
+
+```
+@taste-penpot              → references/code-to-design.md
+                             audit routes, components, CSS, lazy load
+                             proposal for the whole app, named pages, or one page
+                             Penpot boards via @zcubekr/penpot-mcp-server only
+@heyeddi-design             → copy tokens into design.md
+                             stop; do not edit Vue until the user asks to build
+```
+
+## UI: improve existing screen
+
+```
+@heyeddi-design critique → report + auto-chain
+<stack implementer>      → P0/P1 from critique
+@engineering-excellence  → change gate
+@visual-auditor
+```
+
+## PR: review → respond → gate
+
+```
+@heyeddi-pr-review       → real findings as inline line comments (or Approve if clean)
+@heyeddi-ci-fails        → if CI red, first while responding
+@heyeddi-pr-respond      → fix/decline, commit, push, reply every thread (same user ok)
+@pre-merge-gate --signoff → merge readiness: clean tree, CI green, threads resolved
+```
+
+## Design vs implement
+
+| Question | Skill |
+|----------|-------|
+| What should it look/feel like? | `@heyeddi-design` |
+| Write Vue/Flutter code? | `@heyeddi-handoff` / `@design-handoff-flutter` |
+| Screenshot mockup? | `@heyeddi-handoff` |
+| Pixels wrong? | `@visual-auditor` (fixes code) |
+
+See `@heyeddi-design` → `reference/implement-routing.md`.
+
+## Never ask (user preference)
+
+- Fix PR review comments?
+- Post threaded replies?
+- Check CI failures?
+- Fix visual issues found in audit?
+- Implement after confirmed brief?
+
+Default answer to all: **yes, do it now**.
+
+Merge into dev / test / staging yourself once `@pre-merge-gate --signoff` exits 0. A production merge takes the user's **authorize merge** in the current turn; never run it earlier.

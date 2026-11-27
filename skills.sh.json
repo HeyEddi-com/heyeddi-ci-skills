@@ -4,13 +4,19 @@
   "groupings": [
     {
       "title": "HeyEddi CI",
-      "description": "Configure eddi-ci.yaml, respond to HeyEddi findings, diagnose failing checks, and author pipeline YAML (Spot fail-closed).",
+      "description": "Configure eddi-ci.yaml, respond to HeyEddi findings, diagnose failing checks, and author pipeline YAML. Includes the permission and merge-gate skills they call.",
       "skills": [
         "heyeddi-ci-config",
         "heyeddi-ci-guide",
         "heyeddi-pr-respond",
         "heyeddi-ci-fails",
-        "heyeddi-ci-runners"
+        "heyeddi-ci-runners",
+        "heyeddi",
+        "heyeddi-setup",
+        "heyeddi-local-first",
+        "pre-merge-gate",
+        "engineering-excellence",
+        "heyeddi-product"
       ]
     }
   ]
